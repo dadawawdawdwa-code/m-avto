@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0b0b">
-  <title>Ink Orbit — Interactive Web Demo</title>
+  <title>init.web</title>
   <script>
     const codeAnchors = new Set(['#code', '#build', '#project-notes']);
     const orbitAnchors = new Set(['#index', '#orbit', '#tools', '#contact', ...codeAnchors]);
@@ -19,7 +19,7 @@
 
     if (isCodeAnchor(currentOrbitAnchor())) {
       document.documentElement.dataset.page = 'code';
-      document.title = 'Under the hood — Ink Orbit';
+      document.title = 'init.web';
     } else {
       document.documentElement.dataset.page = 'home';
     }
@@ -1692,7 +1692,7 @@
           if (!reduced.matches && !code) root.dataset.pageArrival = '';
           else delete root.dataset.pageArrival;
           root.dataset.page = page;
-          document.title = code ? 'Under the hood — Ink Orbit' : 'Ink Orbit — Interactive Web Demo';
+          document.title = 'init.web';
         }
         activeAnchor = anchor;
         updateNav();
