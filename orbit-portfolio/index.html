@@ -1,0 +1,2534 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0b0b">
+  <title>Ink Orbit — Interactive Web Demo</title>
+  <script>
+    const codeAnchors = new Set(['#code', '#build', '#project-notes']);
+    const orbitAnchors = new Set(['#index', '#orbit', '#tools', '#contact', ...codeAnchors]);
+    const isCodeAnchor = (anchor) => codeAnchors.has(anchor);
+
+    function currentOrbitAnchor() {
+      if (orbitAnchors.has(location.hash)) return location.hash;
+      if (location.hash === '#work') return '#code';
+      if (location.hash === '#projects') return '#build';
+      return new URLSearchParams(location.search).get('page') === 'work' ? '#code' : '#index';
+    }
+
+    if (isCodeAnchor(currentOrbitAnchor())) {
+      document.documentElement.dataset.page = 'code';
+      document.title = 'Under the hood — Ink Orbit';
+    } else {
+      document.documentElement.dataset.page = 'home';
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --frame: #292929;
+      --ink: #efeeec;
+      --muted: #aaa8a5;
+      --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+      --gutter: clamp(13px, 2vw, 32px);
+      --horizon-duration: 2.4s;
+      --horizon-ease: cubic-bezier(.36, 0, .64, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: repeating-linear-gradient(135deg, #191919 0 1px, transparent 1px 11px), #0b0b0b;
+      color: var(--ink);
+      font: 16px/1.6 "Segoe UI", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    :focus-visible { outline: 1px solid #fafafa; outline-offset: 5px; }
+    .shell {
+      width: min(100%, 1800px);
+      min-height: 100svh;
+      margin-inline: auto;
+      padding: var(--gutter);
+    }
+
+    .masthead {
+      position: relative;
+      z-index: 2;
+      min-height: 64px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 16px;
+      padding: 10px clamp(15px, 2.5vw, 38px);
+      background: radial-gradient(ellipse at 50% 0%, #222323, #101010 75%);
+      border: 1px solid var(--frame);
+      border-bottom: 0;
+    }
+
+    .wordmark, .eyebrow, .readout {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    .wordmark { display: inline-flex; align-items: center; gap: 12px; justify-self: start; }
+    .mark {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border: 1px solid #424242;
+      color: #d7d5d3;
+      font-size: 10px;
+      letter-spacing: -.08em;
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-self: center;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid #303131;
+      border-radius: 100px;
+      background: #111212;
+    }
+    .nav a, .account-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 100px;
+      color: #bcb9b6;
+      font: 500 13px/1 "Segoe UI", Arial, sans-serif;
+      white-space: nowrap;
+      transition: background .2s, color .2s;
+    }
+    .nav a:hover, .nav a[aria-current="page"] {
+      background: #292a2a;
+      color: var(--ink);
+    }
+    .nav a {
+      position: relative;
+      width: 40px;
+      min-height: 36px;
+      padding: 0;
+    }
+    .nav-icon {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .nav-tooltip {
+      position: absolute;
+      top: calc(100% + 9px);
+      left: 50%;
+      z-index: 1;
+      padding: 7px 9px;
+      border: 1px solid #46494a;
+      border-radius: 6px;
+      background: #171919;
+      color: #efeeec;
+      box-shadow: 0 5px 14px #0008;
+      font: 500 11px/1 var(--mono);
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transform: translate(-50%, -3px);
+      transition: opacity .15s, transform .15s, visibility .15s;
+    }
+    .nav a:focus-visible .nav-tooltip {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+    }
+    @media (hover: hover) {
+      .nav a:hover .nav-tooltip {
+        opacity: 1;
+        visibility: visible;
+        transform: translate(-50%, 0);
+      }
+    }
+    .account-trigger {
+      justify-self: end;
+      border: 1px solid #464747;
+      background: linear-gradient(#2d2e2e, #202121);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .account-trigger:hover { background: #353636; }
+    .account-trigger[data-signed-in] svg { color: #a9c6b5; }
+
+    @property --shine-angle {
+      syntax: "<angle>";
+      inherits: false;
+      initial-value: 28deg;
+    }
+    .chrome {
+      --shine-angle: 28deg;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 0 18px;
+      min-height: 36px;
+      border: 1px solid transparent;
+      border-radius: 100px;
+      background:
+        linear-gradient(#252525, #0e0e0e 70%) padding-box,
+        conic-gradient(from var(--shine-angle), #4d4e52, #9b9da5 12%, #f4f3f5 19%,
+          #797a82 24%, #363638 42%, #647285 50%, #e6e9f1 56%, #b88e74 59%,
+          #49484c 67%, #bfc4c9 82%, #434446) border-box;
+      box-shadow: 0 6px 14px #0008, inset 0 1px 0 #ffffff21;
+      animation: shine 7s linear infinite;
+      transition: color .2s, box-shadow .25s, transform .25s;
+    }
+    .chrome:hover {
+      color: #fff;
+      box-shadow: 0 8px 20px #000a, 0 0 15px #e4e8ff24, inset 0 1px 0 #ffffff35;
+      transform: translateY(-2px);
+    }
+    .chrome:active { transform: translateY(0); }
+    .cta {
+      min-height: 50px;
+      width: fit-content;
+      padding: 0 22px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .cta svg { transition: transform .25s; }
+    .cta:hover svg { transform: translate(2px, -2px); }
+
+    .projects-page { display: none; }
+    [data-page="code"] .hero { display: none; }
+    [data-page="code"] .projects-page {
+      --planet-surface: #08090a;
+      --planet-space: #080c11;
+      display: block;
+      min-height: calc(100svh - 64px - 2 * var(--gutter));
+      scroll-margin-top: calc(64px + var(--gutter));
+      border: 1px solid var(--frame);
+      background: var(--planet-surface);
+    }
+    .projects-intro {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: calc(100svh - 66px - 2 * var(--gutter));
+      padding: clamp(24px, 9svh, 92px) clamp(18px, 5vw, 80px) clamp(120px, 37svh, 430px);
+      background: linear-gradient(180deg, #080909 6%, #101213 44%, #2a3032 81%, #3b4245);
+      text-align: center;
+    }
+    .projects-intro::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      background-image:
+        linear-gradient(#e8efff18 1px, transparent 1px),
+        linear-gradient(90deg, #e8efff18 1px, transparent 1px);
+      background-position: center top;
+      background-size: clamp(46px, 8vw, 150px) clamp(46px, 8vw, 150px);
+      mask-image: linear-gradient(#000 0%, #000b 25%, transparent 72%);
+    }
+    .projects-copy { position: relative; }
+    .projects-planet {
+      position: absolute;
+      z-index: -1;
+      inset-inline: 0;
+      bottom: 0;
+      height: 40%;
+      pointer-events: none;
+    }
+    .projects-planet::before {
+      content: "";
+      position: absolute;
+      inset: -75% -11% 0;
+      background: radial-gradient(ellipse at 50% 77%, #c4d6de7a, #b5c6d33b 34%, #a4b6c21a 52%, transparent 72%);
+      animation: planet-light-in .85s ease-in-out var(--horizon-duration) both;
+    }
+    .projects-planet svg {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .planet-body { fill: var(--planet-surface); }
+    .planet-core-stop { stop-color: var(--planet-surface); }
+    .planet-atmosphere {
+      animation: planet-light-in .85s ease-in-out var(--horizon-duration) both;
+    }
+    @supports (animation-timeline: --planet-scroll) and (animation-range: exit 0% exit 100%) {
+      @media (prefers-reduced-motion: no-preference) {
+        .projects-intro { view-timeline-name: --planet-scroll; }
+        .projects-planet {
+          animation: planet-scroll auto linear both;
+          animation-timeline: --planet-scroll;
+          animation-range: exit 0% exit 100%;
+        }
+      }
+    }
+    @keyframes planet-scroll {
+      from { transform: translateY(0); }
+      to { transform: translateY(-8%); }
+    }
+    /* Scale the dashes with the SVG path so both tips reach its endpoint at any aspect ratio. */
+    .horizon-trace, .horizon-tip {
+      fill: none;
+      stroke-linecap: round;
+    }
+    .horizon-trace {
+      stroke: #bdcbd1;
+      stroke-width: 1.6;
+      stroke-dasharray: 1 1;
+      animation: horizon-meet var(--horizon-duration) var(--horizon-ease) both;
+    }
+    .horizon-tip {
+      stroke: #f5fbff;
+      stroke-width: 3.2;
+      stroke-dasharray: .12 2;
+      filter: drop-shadow(0 0 4px #d3f0ff);
+      opacity: 0;
+      animation:
+        horizon-tip-pass var(--horizon-duration) var(--horizon-ease) both,
+        horizon-tip-out .3s ease-out var(--horizon-duration) forwards;
+    }
+    [data-page="code"] :is(.masthead > *, .projects-copy, .build-notes, .project-details, .projects-footer, .site-footer) {
+      animation: work-copy-in .55s ease-out var(--horizon-duration) both;
+    }
+    @keyframes horizon-meet {
+      from { stroke-dashoffset: 1; opacity: .18; }
+      to { stroke-dashoffset: 0; opacity: 1; }
+    }
+    @keyframes horizon-tip-pass {
+      from { stroke-dashoffset: .12; opacity: 0; }
+      20% { opacity: 1; }
+      to { stroke-dashoffset: -.88; opacity: 1; }
+    }
+    @keyframes horizon-tip-out {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+    @keyframes planet-light-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes work-copy-in {
+      from { opacity: 0; visibility: hidden; }
+      to { opacity: 1; visibility: visible; }
+    }
+    .projects-index, .build-label, .build-topic dt span, .build-code figcaption {
+      color: #b4b4ac;
+      font: 11px/1.5 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+    .projects-intro h1 {
+      margin: 18px 0 16px;
+      font: 500 clamp(51px, min(9vw, 15svh), 145px)/.98 "Segoe UI", Arial, sans-serif;
+      letter-spacing: -.075em;
+    }
+    .projects-intro .projects-index {
+      display: inline-block;
+      padding: 8px 15px;
+      border: 1px solid #e1e7ea32;
+      border-radius: 100px;
+      background: #141719cc;
+      color: #cbd4d8;
+    }
+    .projects-intro p {
+      max-width: 55ch;
+      margin: 0 auto;
+      color: #c4cbd0;
+      font-size: clamp(14px, 1.45vw, 19px);
+    }
+    .projects-jump {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 24px;
+      padding: 9px 18px;
+      border: 1px solid #f1f6f7;
+      border-radius: 9px;
+      background: linear-gradient(#f0f3f4, #cdd5d7);
+      color: #111517;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background .2s, transform .2s;
+    }
+    .projects-jump:hover { background: #f6f9fa; transform: translateY(-2px); }
+    .build-notes {
+      padding: clamp(30px, 5.3vw, 86px) clamp(20px, 5vw, 80px);
+      scroll-margin-top: var(--gutter);
+    }
+    .build-notes h2 {
+      margin: 10px 0 25px;
+      font: 400 clamp(31px, 5vw, 66px)/1.04 Georgia, "Times New Roman", serif;
+      letter-spacing: -.04em;
+    }
+    .build-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      align-items: start;
+      gap: clamp(22px, 4vw, 60px);
+    }
+    .build-topics { margin: 0; }
+    .build-topic {
+      padding: 14px 0 17px;
+      border-top: 1px solid #373a3a;
+    }
+    .build-topic dt { margin-bottom: 4px; font-size: 17px; font-weight: 600; }
+    .build-topic dt span { margin-right: 10px; color: #a1b6bd; }
+    .build-topic dd, .build-code p {
+      margin: 0;
+      color: #bcc5c7;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+    .build-code {
+      min-width: 0;
+      margin: 0;
+      border: 1px solid #40484b;
+      border-radius: 12px;
+      background: #0c0f10;
+      overflow: hidden;
+    }
+    .build-code figcaption {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid #333b3d;
+      background: #171c1e;
+    }
+    .build-code pre {
+      margin: 0;
+      padding: 16px;
+      overflow-x: auto;
+      color: #e3e9eb;
+      font: 12px/1.65 var(--mono);
+    }
+    .build-code code { font: inherit; }
+    .code-keyword { color: #c4b4ef; }
+    .code-property { color: #a9d8ea; }
+    .code-number { color: #e7c4a0; }
+    .build-code p { padding: 12px 16px 15px; border-top: 1px solid #333b3d; }
+    .planet-exit {
+      display: block;
+      width: 100%;
+      height: clamp(220px, 40svh, 420px);
+      background:
+        radial-gradient(circle at 8% 65%, #bdcbd18c .7px, transparent 1.6px),
+        radial-gradient(circle at 20% 79%, #bdcbd16e .6px, transparent 1.5px),
+        radial-gradient(circle at 35% 89%, #bdcbd17a .7px, transparent 1.6px),
+        radial-gradient(circle at 62% 94%, #bdcbd166 .6px, transparent 1.5px),
+        radial-gradient(circle at 77% 72%, #bdcbd194 .7px, transparent 1.6px),
+        radial-gradient(circle at 93% 54%, #bdcbd16e .6px, transparent 1.5px),
+        var(--planet-space);
+    }
+    .planet-exit-light {
+      opacity: clamp(0, calc((var(--exit-progress, 1) - .65) / .35), 1);
+    }
+    .planet-exit-ray {
+      fill: none;
+      stroke: #e1eef3;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-dasharray: 1 1;
+      stroke-dashoffset: calc(1 - var(--exit-progress, 1));
+      vector-effect: non-scaling-stroke;
+      filter: drop-shadow(0 0 5px #c9e8ff);
+    }
+    .project-details {
+      --project-line: #9ab4c640;
+      padding: clamp(28px, 5vw, 74px) clamp(22px, 5vw, 80px) clamp(24px, 4vw, 64px);
+      background: var(--planet-space);
+      scroll-margin-top: var(--gutter);
+    }
+    .project-kicker {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .project-kicker::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--project-line), transparent);
+    }
+    .project-overview {
+      display: grid;
+      grid-template-columns: minmax(0, .95fr) minmax(0, 1fr);
+      align-items: center;
+      gap: clamp(24px, 5vw, 72px);
+      margin: clamp(28px, 4vw, 54px) 0;
+    }
+    .project-copy h2 {
+      margin: 0 0 18px;
+      font: 400 clamp(38px, 5.4vw, 82px)/.98 Georgia, "Times New Roman", serif;
+      letter-spacing: -.05em;
+    }
+    .project-copy h2 em { display: block; color: #a9c3d0; }
+    .project-copy p {
+      max-width: 43ch;
+      margin: 0 0 24px;
+      color: #bac5cb;
+      font-size: clamp(15px, 1.25vw, 18px);
+    }
+    .project-copy .chrome { min-height: 44px; font-size: 13px; }
+    .project-map {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--project-line);
+      border-radius: 12px;
+      background:
+        radial-gradient(ellipse at 50% 60%, #233542b3, transparent 74%),
+        #0c141b;
+    }
+    .project-map figcaption {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--project-line);
+    }
+    .project-map svg { display: block; width: 100%; height: auto; }
+    .project-map-trace {
+      stroke: #d5e8f2;
+      stroke-width: 1.2;
+      stroke-dasharray: 1 1;
+      filter: drop-shadow(0 0 4px #b8d8edbb);
+    }
+    .project-map text { fill: #d4e3e9; font: 13px var(--mono); }
+    @supports (animation-timeline: --project-map-view) and (animation-range: entry 0% cover 48%) {
+      @media (prefers-reduced-motion: no-preference) {
+        .project-map { view-timeline-name: --project-map-view; }
+        .project-map-trace {
+          animation: project-map-draw auto linear both;
+          animation-timeline: --project-map-view;
+          animation-range: entry 0% cover 48%;
+        }
+      }
+    }
+    @keyframes project-map-draw {
+      from { stroke-dashoffset: 1; }
+      to { stroke-dashoffset: 0; }
+    }
+    .project-notes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin: 0;
+      padding: 0;
+      border-block: 1px solid var(--project-line);
+      list-style: none;
+    }
+    .project-notes li {
+      padding: 22px clamp(12px, 2.3vw, 36px) 24px;
+    }
+    .project-notes li + li { border-inline-start: 1px solid var(--project-line); }
+    .project-notes li:first-child { padding-inline-start: 0; }
+    .project-notes h3 { margin: 8px 0 5px; font-size: 18px; font-weight: 600; }
+    .project-notes p { max-width: 37ch; margin: 0; color: #bac5cb; font-size: 15px; }
+
+    @media (max-width: 780px) {
+      .project-overview { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .project-notes { grid-template-columns: minmax(0, 1fr); }
+      .project-notes li { padding-inline: 0; }
+      .project-notes li + li {
+        border-inline-start: 0;
+        border-block-start: 1px solid var(--project-line);
+      }
+    }
+    .projects-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: max(132px, 20svh);
+      padding: 24px clamp(22px, 5vw, 80px) 36px;
+      background: var(--planet-space);
+    }
+    .projects-footer a { min-height: 44px; font-size: 13px; }
+
+    .site-footer {
+      padding: clamp(34px, 5vw, 70px) clamp(20px, 5.3vw, 82px);
+      border: 1px solid var(--frame);
+      border-top: 0;
+      background:
+        radial-gradient(ellipse at 46% -28%, #242424 0%, transparent 66%),
+        #0c0c0c;
+    }
+    .site-footer-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr);
+      gap: clamp(28px, 4.5vw, 66px);
+      max-width: 1120px;
+      margin-inline: auto;
+    }
+    .site-footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .site-footer-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 50%;
+      background: #e8e7e5;
+      color: #171717;
+      font: 700 13px var(--mono);
+    }
+    .site-footer-summary {
+      max-width: 31ch;
+      margin: 12px 0 0;
+      color: #b4b2b1;
+      font-size: 15px;
+    }
+    .site-footer-social {
+      display: grid;
+      gap: 8px;
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+      color: #b4b2b1;
+      font-size: 14px;
+    }
+    .site-footer-social li { display: flex; align-items: center; gap: 10px; }
+    .site-footer-social .nav-icon { flex: 0 0 17px; height: 17px; color: var(--ink); }
+    .site-footer-nav {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: clamp(14px, 3vw, 42px);
+    }
+    .site-footer-nav h2 { margin: 8px 0 6px; font-size: 16px; font-weight: 650; }
+    .site-footer-nav ul { margin: 0; padding: 0; list-style: none; }
+    .site-footer-nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      color: #b4b2b1;
+      font-size: 15px;
+      transition: color .2s;
+    }
+    .site-footer-nav a:hover, .site-footer-nav a:focus-visible { color: #fff; }
+    @media (max-width: 780px) {
+      .site-footer-layout { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 460px) {
+      .site-footer-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    .route-cover {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      place-items: center;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(135deg, #ffffff08 0 1px, transparent 1px 11px),
+        radial-gradient(ellipse at 50% 50%, #353b39, #131515 41%, #0b0c0c 76%);
+    }
+    .route-cover svg { width: clamp(125px, 22vw, 230px); }
+    [data-page-departure="orbit"] .route-cover { display: grid; pointer-events: auto; }
+    [data-page-departure="fade"] .shell { pointer-events: none; }
+    [data-page-arrival] .route-cover {
+      display: grid;
+      animation: route-open .67s .07s cubic-bezier(.72,0,.28,1) both;
+    }
+    @keyframes route-open {
+      from { clip-path: circle(150vmax at 50% 50%); opacity: 1; }
+      75% { opacity: 1; }
+      to { clip-path: circle(0 at 50% 50%); opacity: 0; }
+    }
+
+    .hero {
+      border: 1px solid var(--frame);
+      background: radial-gradient(ellipse at center, #1c1c1c, #121212 68%);
+    }
+    .hero-screen {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-height: calc(100svh - 66px - 2 * var(--gutter));
+    }
+    .contact-section {
+      --contact-bg: #0b0b0e;
+      --contact-muted: #b5b3bf;
+      padding: clamp(46px, 7vw, 100px) clamp(18px, 5.3vw, 82px);
+      border-top: 1px solid var(--frame);
+      background: var(--contact-bg);
+      scroll-margin-top: var(--gutter);
+    }
+    .contact-intro { margin: 0 auto clamp(30px, 4vw, 56px); text-align: center; }
+    .contact-tag {
+      display: inline-block;
+      padding: 5px 14px;
+      border: 1px solid #ad626a60;
+      border-radius: 100px;
+      background: #57262e38;
+      color: #e4a5ad;
+    }
+    .contact-intro h2 {
+      margin: 12px 0 8px;
+      font: 700 clamp(40px, 5.1vw, 70px)/1.05 "Segoe UI", Arial, sans-serif;
+      letter-spacing: -.048em;
+    }
+    .contact-intro p { max-width: 49ch; margin: 0 auto; }
+    .contact-section p { color: var(--contact-muted); }
+    .contact-layout {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      gap: clamp(28px, 4.2vw, 60px);
+      max-width: 1120px;
+      margin-inline: auto;
+    }
+    .contact-layout h3 { margin: 0 0 2px; font-size: 20px; font-weight: 650; }
+    .contact-layout p { margin: 0; font-size: 14px; }
+    .contact-topics {
+      display: grid;
+      gap: 10px;
+      margin: 22px 0 26px;
+      padding: 0;
+      list-style: none;
+      color: var(--contact-muted);
+      font-size: 14px;
+    }
+    .contact-topics li { display: flex; align-items: center; gap: 12px; }
+    .contact-topic-icon {
+      display: grid;
+      flex: 0 0 32px;
+      height: 32px;
+      place-items: center;
+      border: 1px solid #3a3940;
+      border-radius: 8px;
+      background: #202024;
+      color: #b0aeba;
+    }
+    .contact-topic-icon svg, .globe-toggle svg { width: 15px; height: 15px; }
+    .contact-globe {
+      position: relative;
+      height: clamp(158px, 18vw, 235px);
+      margin: 0;
+    }
+    .contact-globe canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      mask-image: linear-gradient(#000 42%, transparent 98%);
+    }
+    .globe-toggle {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid #37373e;
+      border-radius: 50%;
+      background: #151519;
+      color: #d3d2d9;
+      cursor: pointer;
+    }
+    .globe-toggle:not([hidden]) { display: grid; place-items: center; }
+    .globe-toggle:hover { background: #25252a; }
+    .globe-toggle[aria-pressed="true"] .globe-pause,
+    .globe-toggle[aria-pressed="false"] .globe-play { display: none; }
+    .contact-form {
+      display: grid;
+      gap: 17px;
+      padding: clamp(19px, 2.7vw, 34px);
+      border: 1px solid #2c2b31;
+      border-radius: 16px;
+      background: #18181c;
+    }
+    .contact-divider {
+      height: 2px;
+      margin: 7px 0;
+      background: radial-gradient(circle, #89858e80 1px, transparent 1.2px) 0 0 / 6px 2px;
+      mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    }
+    .contact-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .contact-field { display: grid; min-width: 0; gap: 6px; }
+    .contact-field span { color: #afadba; }
+    .contact-field :is(input, textarea) {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 13px;
+      border: 1px solid #43424b;
+      border-radius: 11px;
+      background: #222226;
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    .contact-field :is(input, textarea)::placeholder { color: #93909e; }
+    .contact-field textarea { min-height: 106px; resize: vertical; }
+    .contact-submit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      justify-self: start;
+      min-height: 44px;
+      padding: 8px 21px;
+      border: 1px solid #fff;
+      border-radius: 12px;
+      background: #f9f8fa;
+      color: #141419;
+      font: 600 14px/1.3 "Segoe UI", Arial, sans-serif;
+      cursor: pointer;
+    }
+    .contact-submit:hover { background: #dedce1; }
+    .contact-result:empty { position: absolute; }
+    .contact-form .contact-result { color: #d3d0df; }
+    .contact-draft[hidden] { display: none; }
+    @media (max-width: 780px) {
+      .contact-layout { grid-template-columns: minmax(0, 1fr); }
+      .contact-globe { max-width: 490px; margin-inline: auto; }
+    }
+    @media (max-width: 430px) {
+      .contact-fields { grid-template-columns: minmax(0, 1fr); }
+    }
+    .hero-stage {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      grid-template-columns: minmax(0, 34%) minmax(0, 1fr);
+      grid-template-rows: minmax(44px, 1fr) auto auto minmax(44px, 1fr);
+    }
+    .copy-heading, .body-copy {
+      position: relative;
+      z-index: 1;
+    }
+    .copy-heading { grid-area: 2 / 1; }
+    .eyebrow {
+      color: #bbb9b6;
+      margin: 0 0 20px;
+      padding-inline: clamp(23px, 3.5vw, 60px);
+      letter-spacing: .13em;
+      animation: reveal .85s .05s both;
+    }
+    .headline-band {
+      background: linear-gradient(90deg, #1c1c1c 48%, #14141400 100%);
+      border-block: 1px solid var(--frame);
+      padding: clamp(23px, 3.3vw, 50px) clamp(23px, 3.5vw, 60px);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 4.2vw, 72px);
+      line-height: 1.03;
+      letter-spacing: -.055em;
+      font-weight: 400;
+    }
+    h1 span, h1 em { display: block; }
+    h1 span { animation: reveal .95s .1s both; }
+    h1 em {
+      color: #c8c5c2;
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 400;
+      letter-spacing: -.067em;
+      animation: reveal 1.05s .21s both;
+    }
+    .body-copy {
+      grid-area: 3 / 1;
+      padding: 25px clamp(23px, 3.5vw, 60px) 0;
+      animation: reveal .95s .34s both;
+    }
+    .body-copy p {
+      max-width: 37ch;
+      margin: 0 0 24px;
+      color: #c5c3c1;
+      font-size: clamp(14px, 1.25vw, 17px);
+    }
+
+    .figure {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      min-width: 0;
+      margin: 0;
+      scroll-margin: 12px;
+    }
+    .readout {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 15px clamp(12px, 1.7vw, 24px);
+      color: var(--muted);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .canvas-wrap {
+      position: relative;
+      justify-self: center;
+      width: min(48%, 860px);
+      min-height: 0;
+    }
+    canvas {
+      display: block;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      touch-action: pan-y;
+      cursor: grab;
+      animation: canvas-in 1.1s .13s both;
+    }
+    canvas:active { cursor: grabbing; }
+    canvas:focus-visible { outline-offset: -6px; }
+
+    .tool-strip {
+      padding: 15px clamp(16px, 3vw, 46px) 20px;
+      border-top: 1px solid var(--frame);
+      background: radial-gradient(ellipse at 94% 100%, #241710 0%, #0d0d0d 60%);
+    }
+    .tool-strip h2 {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+      text-align: center;
+      letter-spacing: .025em;
+    }
+    .tool-list {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px clamp(14px, 2.4vw, 34px);
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0;
+      list-style: none;
+    }
+    .tool-list li {
+      flex: 1 0 max-content;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #ddd9d6;
+      font-size: clamp(15px, 1.45vw, 21px);
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: -.025em;
+      white-space: nowrap;
+    }
+    .tool-logo {
+      display: block;
+      flex: none;
+      width: 27px;
+      height: 27px;
+      filter: saturate(.55);
+      transition: filter .25s ease;
+    }
+    .tool-list li:hover .tool-logo { filter: saturate(1); }
+
+    .account-dialog {
+      width: min(746px, calc(100% - 28px));
+      max-width: none;
+      max-height: calc(100dvh - 28px);
+      padding: 0;
+      border: 1px solid #4a4a47;
+      border-radius: 19px;
+      color: var(--ink);
+      background: #151617;
+      box-shadow: 0 26px 90px #000b, 0 1px 0 #ffffff28 inset;
+    }
+    .account-dialog[open] { animation: account-in .28s ease-out both; }
+    .account-dialog::backdrop { background: #08090bd6; backdrop-filter: blur(9px); }
+    body:has(.account-dialog[open]) { overflow: hidden; }
+    .account-layout {
+      display: grid;
+      grid-template-columns: minmax(0, .76fr) minmax(0, 1.24fr);
+      position: relative;
+      background: radial-gradient(ellipse at 100% 0%, #262827, #171818 45%, #141515 100%);
+    }
+    .account-art {
+      min-height: 400px;
+      position: relative;
+      isolation: isolate;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 26px;
+      overflow: hidden;
+      border-right: 1px solid #3b3b39;
+      background:
+        linear-gradient(145deg, #1112 30%, #0a0b0c 100%),
+        repeating-linear-gradient(135deg, #b6b3ad0b 0 1px, transparent 1px 11px),
+        radial-gradient(ellipse at 42% 49%, #414748, #151718 71%);
+    }
+    .account-art svg {
+      position: absolute;
+      width: 120%;
+      max-width: 340px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: -1;
+    }
+    .account-caption, .account-kicker {
+      margin: 0;
+      color: #bbb8b1;
+      font: 10px/1.5 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .14em;
+    }
+    .account-caption:last-child { align-self: end; color: #979b9c; }
+    .account-content { padding: 31px clamp(23px, 4vw, 42px); }
+    .account-close {
+      position: absolute;
+      z-index: 1;
+      right: 13px;
+      top: 13px;
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #454645;
+      border-radius: 50%;
+      color: var(--ink);
+      background: #181919;
+      cursor: pointer;
+    }
+    .account-close:hover { background: #303232; }
+    .account-kicker { padding-right: 34px; }
+    .account-kicker::before { content: "●"; margin-right: 8px; color: #b8c5bd; }
+    .account-content h2 {
+      margin: 10px 0 3px;
+      color: #f2efeb;
+      font: 400 clamp(31px, 4vw, 41px)/1.08 Georgia, "Times New Roman", serif;
+      letter-spacing: -.045em;
+    }
+    .account-description, .account-note, .account-switch {
+      margin: 8px 0 17px;
+      color: #b5b3af;
+      font-size: 13px;
+    }
+    .account-form {
+      display: grid;
+      gap: 12px;
+    }
+    .account-form[hidden], .account-form [hidden], .account-profile[hidden] { display: none; }
+    .account-field { display: grid; gap: 5px; }
+    .account-field label { font-size: 12px; font-weight: 600; color: #d8d5d0; }
+    .account-field input {
+      width: 100%;
+      min-height: 42px;
+      padding: 0 12px;
+      border: 1px solid #484a49;
+      border-radius: 8px;
+      background: #101111;
+      color: var(--ink);
+      font: 14px/1 "Segoe UI", Arial, sans-serif;
+    }
+    .account-field input::placeholder { color: #8f918d; }
+    .account-field input:focus { outline: 1px solid #bdbab4; outline-offset: 0; }
+    .account-password { position: relative; }
+    .account-password input { padding-right: 64px; }
+    .password-toggle, .account-mode {
+      padding: 4px 5px;
+      border: 0;
+      color: #e1ddd7;
+      background: transparent;
+      font: 600 12px/1.3 "Segoe UI", Arial, sans-serif;
+      cursor: pointer;
+    }
+    .password-toggle { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); }
+    .account-mode { text-decoration: underline; text-underline-offset: 3px; }
+    .account-action {
+      min-height: 42px;
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #e5e3df;
+      border-radius: 8px;
+      background: linear-gradient(#ecebe8, #cecbc5);
+      color: #161716;
+      font: 600 14px/1.2 "Segoe UI", Arial, sans-serif;
+      cursor: pointer;
+    }
+    .account-action:hover { background: #faf9f7; }
+    .account-action:disabled { opacity: .65; cursor: wait; }
+    .account-status { margin: 0; color: #f2b0a8; font-size: 12px; }
+    .account-status:empty { display: none; }
+    .account-switch, .account-note { margin: 0; text-align: center; }
+    .account-note { margin-top: 15px; color: #a3a39e; font-size: 11px; }
+    .profile-card {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      margin-bottom: 17px;
+      padding: 14px;
+      border: 1px solid #414241;
+      border-radius: 10px;
+      background: #101111;
+    }
+    .profile-avatar {
+      flex: 0 0 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #575b56;
+      border-radius: 50%;
+      background: #282b28;
+      color: #dce4d8;
+      font-weight: 600;
+    }
+    .profile-card strong, .profile-card small { display: block; overflow-wrap: anywhere; }
+    .profile-card small { color: #b5b3af; }
+    @keyframes account-in {
+      from { opacity: 0; transform: translateY(9px) scale(.99); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @keyframes shine { to { --shine-angle: 388deg; } }
+    @keyframes canvas-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes reveal {
+      from { opacity: 0; filter: blur(7px); transform: translateY(12px); }
+      to { opacity: 1; filter: blur(0); transform: none; }
+    }
+
+    @media (max-width: 780px) {
+      .hero-stage {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
+      }
+      .copy-heading {
+        grid-area: 1 / 1;
+        align-self: end;
+        padding-top: 25px;
+        text-align: center;
+      }
+      h1 { font-size: clamp(40px, 8.3vw, 65px); }
+      .figure {
+        position: relative;
+        grid-area: 2 / 1;
+        min-height: clamp(250px, 78vw, 450px);
+      }
+      .canvas-wrap { width: min(100%, 580px); }
+      .body-copy {
+        grid-area: 3 / 1;
+        align-self: start;
+        padding-block: 12px 30px;
+        text-align: center;
+      }
+      .body-copy p { margin-inline: auto; }
+      .tool-list li { flex: 0 0 auto; }
+      .tool-logo { width: 23px; height: 23px; }
+    }
+    @media (max-width: 600px) {
+      .masthead { padding-inline: 12px; gap: 8px; }
+      .nav a { width: 36px; min-height: 34px; }
+      .account-trigger { padding-inline: 9px; font-size: 12px; }
+      .account-layout { grid-template-columns: minmax(0, 1fr); }
+      .account-art { display: none; }
+      .account-content { padding-block: 26px; }
+      .build-layout { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 430px) {
+      .nav a { width: 32px; }
+      .account-trigger { width: 36px; min-height: 36px; padding: 0; }
+      .account-label { display: none; }
+      .eyebrow { font-size: 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .planet-exit-light { opacity: 1; }
+      .planet-exit-ray { stroke-dashoffset: 0; }
+      .route-cover { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" id="index">
+    <header class="masthead">
+      <a class="wordmark" href="#index" aria-label="Home">
+        <span class="mark" aria-hidden="true">&lt;/&gt;</span>
+      </a>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="#index" aria-label="Home">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m3 10 9-7 9 7M5 9v11h5v-5h4v5h5V9"/>
+          </svg>
+          <span class="nav-tooltip" aria-hidden="true">Home</span>
+        </a>
+        <a href="#code" aria-label="Code">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 4l-4 16"/>
+          </svg>
+          <span class="nav-tooltip" aria-hidden="true">Code</span>
+        </a>
+      </nav>
+      <button class="account-trigger" type="button" aria-label="Account" aria-haspopup="dialog" aria-controls="account-dialog">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="12" cy="8" r="3.25"/><path d="M5 20v-1.5a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5V20"/>
+        </svg>
+        <span class="account-label">Account</span>
+      </button>
+    </header>
+
+    <main class="hero" aria-labelledby="intro-title">
+      <div class="hero-screen">
+      <div class="hero-stage">
+      <div class="copy-heading">
+        <p class="eyebrow">Interactive web demo</p>
+        <div class="headline-band">
+          <h1 id="intro-title" tabindex="-1"><span>Web interfaces</span><em>in motion.</em></h1>
+        </div>
+      </div>
+        <div class="body-copy">
+          <p>A live demo of responsive layout, browser graphics, and motion. Drag the orbit to see how it responds.</p>
+          <a class="chrome cta" href="#code">
+            Explore the code
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <path d="M4 12 12 4M5 4h7v7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+        </div>
+      <figure class="figure" id="orbit" aria-labelledby="figure-label">
+        <div class="readout">
+          <span id="heading" aria-hidden="true">N 000°</span>
+          <span id="figure-label">Ink Orbit / 3D</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="sculpture" tabindex="0" aria-label="Ink Orbit. Drag or use the arrow keys to rotate the sculpture.">
+            A glass sphere suspended between hand-drawn ink orbits.
+          </canvas>
+        </div>
+        <figcaption class="readout"><span>Drag to rotate</span><span>FIG. 01</span></figcaption>
+      </figure>
+      </div>
+
+      <section class="tool-strip" id="tools" aria-labelledby="tools-title">
+        <h2 id="tools-title">Web production toolkit</h2>
+        <ul class="tool-list" role="list">
+          <li>
+            <svg class="tool-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="#007acc" d="M17 2.25 23 4.9v14.2L17 21.75 6.8 13.9l-3.55 2.7L1 15.45v-2l3.95-3L1 7.35v-2l2.25-1.2 3.55 2.7L17 2.25ZM10 10.45l7 5.3V6.5l-7 3.95Z"/>
+              <path fill="#1f9cf0" d="M17 2.25 23 4.9v14.2L17 21.75V2.25Z"/>
+              <path fill="#0c85d3" d="M1 13.45 17 2.25v4.4L3.25 16.6 1 15.45v-2Z"/>
+            </svg>
+            <span>VS Code</span>
+          </li>
+          <li>
+            <svg class="tool-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect width="24" height="24" rx="5" fill="#001e36"/>
+              <text x="12" y="16.1" fill="#31a8ff" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle">Ps</text>
+            </svg>
+            <span>Photoshop</span>
+          </li>
+          <li>
+            <svg class="tool-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="#f24e1e" d="M8.5 1.5H12v7H8.5a3.5 3.5 0 1 1 0-7Z"/>
+              <path fill="#ff7262" d="M12 1.5h3.5a3.5 3.5 0 0 1 0 7H12Z"/>
+              <path fill="#a259ff" d="M8.5 8.5H12v7H8.5a3.5 3.5 0 1 1 0-7Z"/>
+              <circle cx="15.5" cy="12" r="3.5" fill="#1abcfe"/>
+              <path fill="#0acf83" d="M8.5 15.5H12V19a3.5 3.5 0 1 1-3.5-3.5Z"/>
+            </svg>
+            <span>Figma</span>
+          </li>
+          <li>
+            <svg class="tool-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect width="24" height="24" rx="5" fill="#00005b"/>
+              <text x="12" y="16.1" fill="#9999ff" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle">Ae</text>
+            </svg>
+            <span>After Effects</span>
+          </li>
+          <li>
+            <svg class="tool-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="#e87d0d" d="M23.4 12.8c-.25-1.74-1.2-3.25-2.6-4.32l-7.75-6.02c-.46-.36-1.2-.37-1.7 0-.54.39-.57 1-.09 1.39l3.19 2.61H4.73c-.75 0-1.39.51-1.39 1.1 0 .49.45.85 1.05.85h4.66l-8.4 6.38c-.7.52-.85 1.37-.38 1.89.43.49 1.18.46 1.77-.02l2.72-2.19c.24 4.68 4.18 7.48 9.13 7.48 5.52 0 10.15-3.63 9.51-9.15Z"/>
+              <ellipse cx="14.2" cy="13.7" rx="6.35" ry="4.65" fill="#faf9f7"/>
+              <ellipse cx="14.2" cy="13.7" rx="4.1" ry="3.15" fill="#265787"/>
+            </svg>
+            <span>Blender</span>
+          </li>
+        </ul>
+      </section>
+      </div>
+      <section class="contact-section" id="contact" aria-labelledby="contact-title" tabindex="-1">
+        <header class="contact-intro">
+          <span class="build-label contact-tag">Contact</span>
+          <h2 id="contact-title">Contact us</h2>
+          <p>Have a project in mind, a question about Ink Orbit, or an idea to share? Tell us about it.</p>
+        </header>
+        <div class="contact-layout">
+          <div>
+            <h3>Get in touch</h3>
+            <p>Start with a quick note about what you’re looking for.</p>
+            <ul class="contact-topics" role="list">
+              <li>
+                <span class="contact-topic-icon" aria-hidden="true">
+                  <svg class="nav-icon" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+                </span>
+                Project inquiries
+              </li>
+              <li>
+                <span class="contact-topic-icon" aria-hidden="true">
+                  <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 19v-2a4 4 0 0 1 4-4h3a4 4 0 0 1 4 4v2m3-6a4 4 0 0 1 4 4v2"/><circle cx="8.5" cy="7" r="3"/><path d="M16 4a3 3 0 0 1 0 6"/></svg>
+                </span>
+                Collaborations
+              </li>
+              <li>
+                <span class="contact-topic-icon" aria-hidden="true">
+                  <svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 11.5a7 7 0 0 1-7 7H4l1.5-3A7 7 0 0 1 12 4h1a7 7 0 0 1 7 7.5Z"/><path d="M9 11h6"/></svg>
+                </span>
+                Questions and feedback
+              </li>
+            </ul>
+            <figure class="contact-globe">
+              <canvas aria-hidden="true"></canvas>
+              <button class="globe-toggle" type="button" aria-label="Pause globe rotation" aria-pressed="false" hidden>
+                <svg class="nav-icon globe-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12m6-12v12"/></svg>
+                <svg class="nav-icon globe-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 10 7-10 7z"/></svg>
+              </button>
+            </figure>
+          </div>
+          <form class="contact-form" aria-labelledby="contact-form-title">
+            <div>
+              <h3 id="contact-form-title">Send a message</h3>
+              <p>Fill in your details to prepare an email draft.</p>
+            </div>
+            <div class="contact-divider" aria-hidden="true"></div>
+            <div class="contact-fields">
+              <label class="contact-field">
+                <span class="build-label">Full name</span>
+                <input name="name" autocomplete="name" placeholder="Your name" maxlength="100" required>
+              </label>
+              <label class="contact-field">
+                <span class="build-label">Company <small>(optional)</small></span>
+                <input name="company" autocomplete="organization" placeholder="Your company" maxlength="100">
+              </label>
+            </div>
+            <label class="contact-field">
+              <span class="build-label">Email address</span>
+              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required>
+            </label>
+            <label class="contact-field">
+              <span class="build-label">Message</span>
+              <textarea name="message" rows="4" placeholder="Tell us about your idea" maxlength="4000" required></textarea>
+            </label>
+            <button class="contact-submit" type="submit" disabled>
+              Copy email draft
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+            </button>
+            <p class="contact-result" role="status"></p>
+            <label class="contact-field contact-draft" hidden>
+              <span class="build-label">Email draft</span>
+              <textarea rows="4" readonly></textarea>
+            </label>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <main class="projects-page" id="code" aria-labelledby="code-title" tabindex="-1">
+      <header class="projects-intro">
+        <div class="projects-planet" aria-hidden="true">
+          <svg viewBox="0 0 1440 400" preserveAspectRatio="none" focusable="false">
+            <defs>
+              <radialGradient id="work-planet-surface">
+                <stop class="planet-core-stop" offset="0"/>
+                <stop class="planet-core-stop" offset=".888"/>
+                <stop offset=".935" stop-color="#14181b"/>
+                <stop offset=".969" stop-color="#505b61"/>
+                <stop offset=".988" stop-color="#acb6ba"/>
+                <stop offset="1" stop-color="#f0f4f5"/>
+              </radialGradient>
+            </defs>
+            <ellipse class="planet-body" cx="720" cy="860" rx="1090" ry="860"/>
+            <ellipse class="planet-atmosphere" cx="720" cy="860" rx="1090" ry="860" fill="url(#work-planet-surface)"/>
+            <path class="horizon-trace" pathLength="1" d="M -12 222.783 A 1090 860 0 0 1 720 0"/>
+            <path class="horizon-trace" pathLength="1" d="M 1452 222.783 A 1090 860 0 0 0 720 0"/>
+            <path class="horizon-tip" pathLength="1" d="M -12 222.783 A 1090 860 0 0 1 720 0"/>
+            <path class="horizon-tip" pathLength="1" d="M 1452 222.783 A 1090 860 0 0 0 720 0"/>
+          </svg>
+        </div>
+        <div class="projects-copy">
+          <span class="projects-index">01 / Frontend notes</span>
+          <h1 id="code-title">Under the hood.</h1>
+          <p>How HTML, CSS, SVG, and JavaScript work together in this demo.</p>
+          <a class="projects-jump" href="#build">
+            Read the breakdown
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3v9m-4-4 4 4 4-4"/>
+            </svg>
+          </a>
+        </div>
+      </header>
+      <section class="build-notes" id="build" aria-labelledby="build-title" tabindex="-1">
+        <span class="build-label">02 / The implementation</span>
+        <h2 id="build-title">From structure to motion.</h2>
+        <div class="build-layout">
+          <dl class="build-topics">
+            <div class="build-topic">
+              <dt><span aria-hidden="true">01</span> HTML &amp; CSS · Layout</dt>
+              <dd>Landmarks and headings give each view a clear structure. CSS Grid keeps the orbit centered and stacks the layout on narrow screens.</dd>
+            </div>
+            <div class="build-topic">
+              <dt><span aria-hidden="true">02</span> SVG · Motion</dt>
+              <dd>Two mirrored paths draw the horizon. The same duration controls when the heading and buttons appear, so the text waits for the rays to meet.</dd>
+            </div>
+            <div class="build-topic">
+              <dt><span aria-hidden="true">03</span> JavaScript · Interaction</dt>
+              <dd>Canvas renders the draggable orbit. Fragment links switch views within one HTML document and support Back and Forward when browser history is available.</dd>
+            </div>
+          </dl>
+          <figure class="build-code">
+            <figcaption><span>Horizon animation</span><span>CSS</span></figcaption>
+            <pre><code><span class="code-keyword">.horizon-trace</span> {
+  <span class="code-property">stroke-dasharray</span>: <span class="code-number">1 1</span>;
+  <span class="code-property">animation</span>: horizon-meet var(--horizon-duration)
+    var(--horizon-ease) both;
+}
+
+<span class="code-keyword">@keyframes</span> horizon-meet {
+  <span class="code-keyword">from</span> { <span class="code-property">stroke-dashoffset</span>: <span class="code-number">1</span>; <span class="code-property">opacity</span>: <span class="code-number">.18</span>; }
+  <span class="code-keyword">to</span>   { <span class="code-property">stroke-dashoffset</span>: <span class="code-number">0</span>; <span class="code-property">opacity</span>: <span class="code-number">1</span>; }
+}</code></pre>
+            <p>Both paths use <code>pathLength="1"</code>. Animating the dash offset from 1 to 0 draws each half toward the center.</p>
+          </figure>
+        </div>
+      </section>
+      <svg class="planet-exit" viewBox="0 -80 1440 480" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="planet-exit-halo">
+            <stop offset=".9" stop-color="#c4d6de" stop-opacity=".45"/>
+            <stop offset=".95" stop-color="#9aafb9" stop-opacity=".13"/>
+            <stop offset="1" stop-color="#9aafb9" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <ellipse class="planet-exit-light" cx="720" cy="-580" rx="1190" ry="960" fill="url(#planet-exit-halo)"/>
+        <ellipse class="planet-body" cx="720" cy="-580" rx="1090" ry="860"/>
+        <ellipse class="planet-exit-light" cx="720" cy="-580" rx="1090" ry="860" fill="url(#work-planet-surface)"/>
+        <path class="planet-exit-ray" pathLength="1" d="M -12 57.217 A 1090 860 0 0 0 720 280"/>
+        <path class="planet-exit-ray" pathLength="1" d="M 1452 57.217 A 1090 860 0 0 1 720 280"/>
+      </svg>
+      <section class="project-details" id="project-notes" aria-labelledby="project-details-title" tabindex="-1">
+        <div class="project-kicker"><span class="build-label">03 / Project notes</span></div>
+        <div class="project-overview">
+          <div class="project-copy">
+            <h2 id="project-details-title">Motion sets <em>the pace.</em></h2>
+            <p>Ink Orbit is a browser experiment in movement. A sculpture responds to your gestures, and a planet’s horizon carries you from the experience into the way it was built.</p>
+            <a class="chrome" href="#orbit">
+              Try the orbit
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 12 12 4M5 4h7v7"/>
+              </svg>
+            </a>
+          </div>
+          <figure class="project-map">
+            <figcaption class="build-label"><span>Motion map</span><span>Fig. 01</span></figcaption>
+            <svg viewBox="0 0 540 264" fill="none" aria-hidden="true" focusable="false">
+              <defs>
+                <pattern id="project-map-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <path d="M24 0H0v24" stroke="#a6c1ce" stroke-opacity=".18"/>
+                </pattern>
+                <radialGradient id="project-map-core" cx=".35" cy=".28" r=".8">
+                  <stop stop-color="#a6bdca"/>
+                  <stop offset=".42" stop-color="#465c69"/>
+                  <stop offset=".88" stop-color="#121c25"/>
+                  <stop offset="1" stop-color="#243744"/>
+                </radialGradient>
+              </defs>
+              <path fill="url(#project-map-grid)" d="M0 0h540v264H0z"/>
+              <g stroke="#b8d1e0" stroke-opacity=".27">
+                <path d="M28 132h484M270 17v230" stroke-dasharray="3 6"/>
+                <circle cx="270" cy="132" r="78" stroke-dasharray="1 4"/>
+                <circle cx="270" cy="132" r="108" stroke-opacity=".15"/>
+                <ellipse cx="270" cy="132" rx="160" ry="48" transform="rotate(24 270 132)"/>
+              </g>
+              <circle cx="270" cy="132" r="42" fill="url(#project-map-core)" stroke="#a6bfcd" stroke-opacity=".65"/>
+              <g transform="rotate(-25 270 132)">
+                <ellipse cx="270" cy="132" rx="160" ry="58" stroke="#98b0bf" stroke-opacity=".48"/>
+                <path class="project-map-trace" pathLength="1" d="M110 132a160 58 0 1 1 320 0 160 58 0 1 1-320 0"/>
+                <g fill="#13222d" stroke="#e3eef5" stroke-width="1.4">
+                  <circle cx="110" cy="132" r="5"/>
+                  <circle cx="270" cy="74" r="5"/>
+                  <circle cx="430" cy="132" r="5"/>
+                </g>
+              </g>
+              <text x="99" y="218">01</text>
+              <text x="221" y="70">02</text>
+              <text x="431" y="63">03</text>
+              <path d="M28 26v14m-7-7h14M512 224v14m-7-7h14" stroke="#a6bfcd" stroke-opacity=".6"/>
+            </svg>
+          </figure>
+        </div>
+        <ol class="project-notes" role="list">
+          <li>
+            <span class="build-label">01 / Pointer</span>
+            <h3>Rotate the sculpture.</h3>
+            <p>Drag the orbit to turn it. Move the cursor over it for a softer tilt while the sculpture keeps spinning.</p>
+          </li>
+          <li>
+            <span class="build-label">02 / Scroll</span>
+            <h3>Trace the lower rim.</h3>
+            <p>Two rays follow your scroll and meet beneath the planet. Scroll back up to see them separate.</p>
+          </li>
+          <li>
+            <span class="build-label">03 / Navigation</span>
+            <h3>Explore two views.</h3>
+            <p>Home and Code share a single HTML file. Each view has its own link, so you can revisit it directly or use the browser’s Back button.</p>
+          </li>
+        </ol>
+      </section>
+      <footer class="projects-footer">
+        <span class="build-label">04 / End of orbit</span>
+        <a class="chrome" href="#index"><span aria-hidden="true">←</span> Back to home</a>
+      </footer>
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer-layout">
+        <div>
+          <a class="site-footer-brand" href="#index">
+            <span class="site-footer-mark" aria-hidden="true">&lt;/&gt;</span>
+            Ink Orbit
+          </a>
+          <p class="site-footer-summary">An interactive web project about motion, browser graphics, and responsive design. Explore the experience and see how it was built.</p>
+          <ul class="site-footer-social" role="list">
+            <li>
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M13 3h3a5 5 0 0 0 5 5v3a8 8 0 0 1-5-1.8v6.3a5.5 5.5 0 1 1-5.5-5.5h.5v3h-.5a2.5 2.5 0 1 0 2.5 2.5z"/>
+              </svg>
+              <span>TikTok</span>
+            </li>
+            <li>
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3" y="3" width="18" height="18" rx="5"/>
+                <circle cx="12" cy="12" r="4"/>
+                <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
+              </svg>
+              <span>Instagram</span>
+            </li>
+            <li>
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3" y="5.5" width="18" height="13" rx="2"/>
+                <path d="m4 7 8 6 8-6"/>
+              </svg>
+              <span>hello@inkorbit.example</span>
+            </li>
+          </ul>
+        </div>
+        <nav class="site-footer-nav" aria-label="Footer navigation">
+          <div>
+            <h2>Explore</h2>
+            <ul role="list">
+              <li><a href="#index">Home</a></li>
+              <li><a href="#orbit">Interactive orbit</a></li>
+              <li><a href="#tools">Tools</a></li>
+            </ul>
+          </div>
+          <div>
+            <h2>Resources</h2>
+            <ul role="list">
+              <li><a href="#code">Code overview</a></li>
+              <li><a href="#build">Implementation</a></li>
+            </ul>
+          </div>
+          <div>
+            <h2>About</h2>
+            <ul role="list">
+              <li><a href="#project-notes">Project notes</a></li>
+              <li><a href="#contact">Contact</a></li>
+            </ul>
+          </div>
+        </nav>
+      </div>
+    </footer>
+  </div>
+
+  <div class="route-cover" aria-hidden="true">
+    <svg viewBox="0 0 200 200" fill="none" stroke="#aab6ae">
+      <circle cx="100" cy="100" r="77" stroke-dasharray="1 4" opacity=".56"/>
+      <ellipse cx="100" cy="100" rx="93" ry="33" transform="rotate(-30 100 100)" stroke-width="1.2"/>
+      <ellipse cx="100" cy="100" rx="84" ry="28" transform="rotate(51 100 100)" opacity=".69"/>
+      <circle cx="100" cy="100" r="16" fill="#9ea9a2" fill-opacity=".4"/>
+      <circle cx="40" cy="151" r="3" fill="#eeebe0"/>
+    </svg>
+  </div>
+
+  <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
+    <div class="account-layout">
+      <button class="account-close" type="button" aria-label="Close account">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+          <path d="m4 4 8 8m0-8-8 8"/>
+        </svg>
+      </button>
+      <div class="account-art" aria-hidden="true">
+        <p class="account-caption">Ink Orbit / Account</p>
+        <svg viewBox="0 0 280 280" fill="none">
+          <defs>
+            <radialGradient id="account-core" cx=".35" cy=".28" r=".76">
+              <stop stop-color="#e0dcd4"/><stop offset=".32" stop-color="#777d7d"/>
+              <stop offset=".79" stop-color="#292d2e"/><stop offset="1" stop-color="#131516"/>
+            </radialGradient>
+            <linearGradient id="account-ring" x1="0" y1="0" x2="1" y2="1">
+              <stop stop-color="#656867"/><stop offset=".48" stop-color="#d6d5cc"/>
+              <stop offset="1" stop-color="#41494c"/>
+            </linearGradient>
+          </defs>
+          <circle cx="140" cy="140" r="102" stroke="#b2b7b5" stroke-opacity=".24" stroke-dasharray="1 5"/>
+          <path d="M20 140h240M140 20v240" stroke="#b2b7b5" stroke-opacity=".19"/>
+          <ellipse cx="140" cy="140" rx="105" ry="42" transform="rotate(-35 140 140)" stroke="url(#account-ring)" stroke-width="1.35"/>
+          <ellipse cx="140" cy="140" rx="103" ry="35" transform="rotate(38 140 140)" stroke="url(#account-ring)"/>
+          <circle cx="140" cy="140" r="36" fill="url(#account-core)" stroke="#979d99"/>
+          <ellipse cx="140" cy="140" rx="98" ry="32" transform="rotate(-74 140 140)" stroke="url(#account-ring)" stroke-opacity=".65"/>
+          <circle cx="57" cy="190" r="3.2" fill="#d8d4c9"/><circle cx="207" cy="202" r="2.7" fill="#a8b4b4"/>
+        </svg>
+        <p class="account-caption">Fig. 02 / Local session</p>
+      </div>
+      <div class="account-content">
+        <p class="account-kicker">Local account demo</p>
+        <h2 id="account-title">Welcome back</h2>
+        <p class="account-description" id="account-description">Sign in to your account.</p>
+        <form class="account-form">
+          <div class="account-field" id="account-name-field" hidden>
+            <label for="account-name">Name</label>
+            <input id="account-name" name="name" autocomplete="name" placeholder="Your name" maxlength="60" disabled>
+          </div>
+          <div class="account-field">
+            <label for="account-email">Email</label>
+            <input id="account-email" name="email" type="email" autocomplete="username" placeholder="you@example.com" maxlength="254" required>
+          </div>
+          <div class="account-field">
+            <label for="account-password">Password</label>
+            <div class="account-password">
+              <input id="account-password" name="password" type="password" autocomplete="current-password" placeholder="Your password" maxlength="128" required>
+              <button class="password-toggle" type="button">Show</button>
+            </div>
+          </div>
+          <p class="account-status" role="alert"></p>
+          <button class="account-action account-submit" type="submit">Sign in</button>
+          <p class="account-switch"><span class="account-switch-text">New here?</span> <button class="account-mode" type="button">Create an account</button></p>
+        </form>
+        <div class="account-profile" hidden>
+          <div class="profile-card">
+            <span class="profile-avatar" aria-hidden="true"></span>
+            <div><strong class="profile-name"></strong><small class="profile-email"></small></div>
+          </div>
+          <button class="account-action sign-out" type="button">Sign out</button>
+        </div>
+        <p class="account-note">This demo stays in this browser. Use a test password.</p>
+      </div>
+    </div>
+  </dialog>
+
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const cover = document.querySelector('.route-cover');
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+      const planetExit = document.querySelector('.planet-exit');
+      const navLinks = document.querySelectorAll('.nav a[href]');
+      const homeForeground = document.querySelectorAll(
+        '.masthead > *, .hero .copy-heading, .hero .body-copy, .hero .figure, .hero .tool-strip > *, .contact-section, .site-footer'
+      );
+      let activeAnchor = currentOrbitAnchor();
+      let departure = null;
+      let exitFrame = 0;
+      let exitProgress = -1;
+
+      function updatePlanetExit() {
+        exitFrame = 0;
+        if (root.dataset.page !== 'code' || reduced.matches) return;
+
+        const { top, height } = planetExit.getBoundingClientRect();
+        // Start as the outer ends of the arc enter and finish with the full limb in view.
+        const start = innerHeight - height * .30;
+        const end = innerHeight * .9 - height;
+        const progress = Math.min(1, Math.max(0, (start - top) / (start - end)));
+        if (progress === exitProgress) return;
+
+        exitProgress = progress;
+        const eased = progress * progress * (3 - 2 * progress);
+        planetExit.style.setProperty('--exit-progress', eased);
+      }
+
+      function schedulePlanetExit() {
+        if (!exitFrame && root.dataset.page === 'code' && !reduced.matches) {
+          exitFrame = requestAnimationFrame(updatePlanetExit);
+        }
+      }
+
+      function updateNav() {
+        const selected = isCodeAnchor(activeAnchor) ? '#code' : '#index';
+        navLinks.forEach((link) => {
+          if (link.getAttribute('href') === selected) link.setAttribute('aria-current', 'page');
+          else link.removeAttribute('aria-current');
+        });
+      }
+
+      function showAnchor(anchor, focus = false) {
+        const code = isCodeAnchor(anchor);
+        const page = code ? 'code' : 'home';
+        const switchedPage = root.dataset.page !== page;
+        if (switchedPage) {
+          if (!reduced.matches && !code) root.dataset.pageArrival = '';
+          else delete root.dataset.pageArrival;
+          root.dataset.page = page;
+          document.title = code ? 'Under the hood — Ink Orbit' : 'Ink Orbit — Interactive Web Demo';
+        }
+        activeAnchor = anchor;
+        updateNav();
+
+        const target = document.getElementById(anchor === '#code' ? 'index' : anchor.slice(1));
+        target.scrollIntoView({ behavior: switchedPage || reduced.matches ? 'instant' : 'smooth' });
+        schedulePlanetExit();
+        if (focus && anchor === '#orbit') {
+          document.getElementById('sculpture').focus({ preventScroll: true });
+        } else if (focus && (anchor === '#contact' || (anchor === '#project-notes' && !switchedPage))) {
+          target.focus({ preventScroll: true });
+        } else if (focus && switchedPage) {
+          document.getElementById(code ? 'code' : 'intro-title').focus({ preventScroll: true });
+        }
+      }
+
+      function selectAnchor(anchor) {
+        showAnchor(anchor, true);
+        if (location.hash === anchor) return;
+        try {
+          const url = new URL(location.href);
+          url.hash = anchor;
+          history.pushState(null, '', url.href);
+        } catch {
+          // Some embedded previews disallow history updates. The view is already open.
+        }
+      }
+
+      function stopDeparture() {
+        delete root.dataset.pageDeparture;
+        departure?.forEach((animation) => animation.cancel());
+        departure = null;
+      }
+
+      function restoreAnchor() {
+        stopDeparture();
+        const anchor = currentOrbitAnchor();
+        if (activeAnchor !== anchor) showAnchor(anchor);
+      }
+
+      cover.addEventListener('animationend', (event) => {
+        if (event.animationName === 'route-open') delete root.dataset.pageArrival;
+      });
+      reduced.addEventListener('change', () => {
+        if (reduced.matches) delete root.dataset.pageArrival;
+        schedulePlanetExit();
+      });
+      addEventListener('scroll', schedulePlanetExit, { passive: true });
+      addEventListener('resize', schedulePlanetExit);
+      addEventListener('popstate', restoreAnchor);
+      addEventListener('hashchange', restoreAnchor);
+      addEventListener('pageshow', (event) => {
+        if (!event.persisted) return;
+        delete root.dataset.pageArrival;
+        restoreAnchor();
+        schedulePlanetExit();
+      });
+
+      document.addEventListener('click', async (event) => {
+        const link = event.target.closest?.('a[href^="#"]');
+        const anchor = link?.getAttribute('href');
+        if (!orbitAnchors.has(anchor) || event.defaultPrevented || event.button !== 0 ||
+            event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+        event.preventDefault();
+        if (departure) return;
+        const enteringCode = isCodeAnchor(anchor);
+        const switchedPage = enteringCode !== isCodeAnchor(activeAnchor);
+        if (!switchedPage || reduced.matches || !cover.animate) {
+          selectAnchor(anchor);
+          return;
+        }
+        delete root.dataset.pageArrival;
+        root.dataset.pageDeparture = enteringCode ? 'fade' : 'orbit';
+        let animations;
+        if (enteringCode) {
+          const layers = Array.from(homeForeground, (element) => ({
+            element, opacity: getComputedStyle(element).opacity,
+          }));
+          animations = layers.map(({ element, opacity }) => element.animate([{ opacity }, { opacity: 0 }], {
+            duration: 560, easing: 'ease-in-out', fill: 'forwards',
+          }));
+        } else {
+          const rect = link.getBoundingClientRect();
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+          const radius = Math.ceil(Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))) + 2;
+          animations = [cover.animate([
+            { clipPath: `circle(0px at ${x}px ${y}px)` },
+            { clipPath: `circle(${radius}px at ${x}px ${y}px)` },
+          ], { duration: 440, easing: 'cubic-bezier(.65,0,.25,1)', fill: 'both' })];
+        }
+
+        departure = animations;
+        try {
+          await Promise.all(animations.map((animation) => animation.finished));
+        } catch {
+          if (departure === animations) stopDeparture();
+          return;
+        }
+        if (departure !== animations) return;
+        selectAnchor(anchor);
+        stopDeparture();
+      });
+      updateNav();
+      schedulePlanetExit();
+    })();
+  </script>
+  <script>
+    (() => {
+      const canvas = document.querySelector('#sculpture');
+      const hero = canvas.closest('.hero-stage');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const lens = document.createElement('canvas');
+      const lensCtx = lens.getContext('2d');
+      const heading = document.querySelector('#heading');
+      const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+      const smallScreen = matchMedia('(max-width: 780px)');
+      const tau = 2 * Math.PI;
+      const depthLayers = 7;
+      const spin = 0.19;
+      const seed = 7;
+
+      function seededRandom(initial) {
+        let state = initial >>> 0;
+        return () => {
+          state = (state + 0x6d2b79f5) >>> 0;
+          let value = Math.imul(state ^ state >>> 15, state | 1);
+          value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+          return ((value ^ value >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+      const normalize = (v) => {
+        const length = Math.hypot(...v) || 1;
+        return v.map((axis) => axis / length);
+      };
+      const cross = ([ax, ay, az], [bx, by, bz]) => [
+        ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx,
+      ];
+
+      // Sample warped loops in 3D, then scatter ink grain around their edges.
+      function buildOrbit(grainCount) {
+        const random = seededRandom(seed * 2654435761 + 1);
+        const unit = () => {
+          const z = random() * 2 - 1;
+          const angle = random() * tau;
+          const radius = Math.sqrt(1 - z * z);
+          return [radius * Math.cos(angle), radius * Math.sin(angle), z];
+        };
+        const core = [];
+        const loops = 3 + Math.floor(random() * 2);
+        for (let loop = 0; loop < loops; loop++) {
+          const normal = unit();
+          const u = normalize(cross(normal, Math.abs(normal[0]) < .9 ? [1, 0, 0] : [0, 1, 0]));
+          const v = normalize(cross(normal, u));
+          const phase = Array.from({ length: 8 }, () => random() * tau);
+          const baseRadius = .9 + random() * .16;
+          for (let i = 0; i < 750; i++) {
+            const t = i / 750 * tau;
+            const radius = baseRadius * (1 + .15 * Math.sin(2 * t + phase[0]) + .07 * Math.sin(3 * t + phase[1]) + .04 * Math.sin(5 * t + phase[2]));
+            const height = baseRadius * (.24 * Math.sin(2 * t + phase[3]) + .08 * Math.sin(3 * t + phase[4]));
+            const width = .087 * (.25 + .75 * Math.pow(.5 + .5 * Math.sin(3 * t + phase[5]), 1.55)) * (.73 + .27 * Math.sin(7 * t + phase[6]));
+            core.push([...u.map((axis, k) => axis * Math.cos(t) * radius + v[k] * Math.sin(t) * radius + normal[k] * height), Math.max(.013, width)]);
+          }
+        }
+        const grain = Array.from({ length: grainCount }, () => {
+          const index = Math.floor(random() * core.length);
+          const point = core[index];
+          const neighbor = core[index % 750 === 749 ? index - 749 : index + 1];
+          const tangent = normalize(neighbor.slice(0, 3).map((axis, k) => axis - point[k]));
+          const direction = normalize(cross(tangent, unit()));
+          const radius = point[3] * (random() < .07 ? 1.5 + random() * 2.5 : .4 + .9 * Math.sqrt(random()));
+          return direction.map((axis, k) => point[k] + axis * radius);
+        });
+        const needles = Array.from({ length: 13 }, () => {
+          const point = core[Math.floor(random() * core.length)];
+          const direction = normalize(point.slice(0, 3).map((axis, k) => axis + unit()[k] * .3));
+          const length = .16 + random() * .48;
+          return [point, direction.map((axis, k) => point[k] + axis * length)];
+        });
+        return { core, grain, needles };
+      }
+
+      let geometry;
+      let pixelRatio = 1;
+      let idleYaw = .83;
+      let idlePitch = 0;
+      let dragYaw = 0;
+      let dragPitch = 0;
+      let targetDragYaw = 0;
+      let targetDragPitch = 0;
+      let leanX = 0;
+      let leanY = 0;
+      let filteredAimX = 0;
+      let filteredAimY = 0;
+      let aimX = 0;
+      let aimY = 0;
+      let pointer = null;
+      let lastTime = 0;
+      let frame = 0;
+      let visible = document.documentElement.dataset.page !== 'code';
+      let needsPaint = true;
+      let lastHeading = -1;
+
+      function render(yaw, pitch) {
+        const { width, height } = canvas;
+        const cx = width / 2;
+        const cy = height / 2;
+        const scale = Math.min(width * .36, height * .39);
+        const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+        const sinP = Math.sin(pitch), cosP = Math.cos(pitch);
+        const project = ([x, y, z]) => {
+          const rotatedZ = z * cosY - x * sinY;
+          const depth = y * sinP + rotatedZ * cosP;
+          const perspective = 3.55 / (3.55 - depth);
+          return [cx + (x * cosY + z * sinY) * perspective * scale,
+            cy + (y * cosP - rotatedZ * sinP) * perspective * scale, depth, perspective];
+        };
+        const layerOf = (depth) => clamp(Math.floor((depth + 1.25) / 2.5 * depthLayers), 0, depthLayers - 1);
+        const ink = Array.from({ length: depthLayers }, () => []);
+        const dust = Array.from({ length: depthLayers }, () => []);
+        for (const point of geometry.core) {
+          const [x, y, depth, perspective] = project(point);
+          ink[layerOf(depth)].push([x, y, point[3] * perspective * scale * .72]);
+        }
+        for (const point of geometry.grain) {
+          const [x, y, depth] = project(point);
+          dust[layerOf(depth)].push([x, y]);
+        }
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.lineWidth = pixelRatio;
+        const axisLength = scale * 1.43;
+        function axis(x1, y1, x2, y2) {
+          const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+          gradient.addColorStop(0, '#73737300');
+          gradient.addColorStop(.5, '#73737367');
+          gradient.addColorStop(1, '#73737300');
+          ctx.strokeStyle = gradient;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+        axis(cx - axisLength, cy, cx + axisLength, cy);
+        axis(cx, cy - axisLength, cx, cy + axisLength);
+
+        for (const [from, to] of geometry.needles) {
+          const [x1, y1] = project(from);
+          const [x2, y2] = project(to);
+          const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+          gradient.addColorStop(0, '#bdbdbd70');
+          gradient.addColorStop(1, '#bdbdbd00');
+          ctx.strokeStyle = gradient;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+
+        function paintLayer(layer) {
+          const shade = 82 + layer * 26;
+          ctx.fillStyle = `rgb(${shade} ${shade} ${shade})`;
+          ctx.beginPath();
+          for (const [x, y, radius] of ink[layer]) {
+            ctx.moveTo(x + radius, y);
+            ctx.arc(x, y, radius, 0, tau);
+          }
+          ctx.fill();
+          ctx.fillStyle = `rgb(${shade} ${shade} ${shade} / .62)`;
+          for (const [x, y] of dust[layer]) ctx.fillRect(x, y, pixelRatio * .95, pixelRatio * .95);
+        }
+
+        for (let i = 0; i < 4; i++) paintLayer(i);
+
+        // Use a live, inverted crop of the far orbits for the glass core.
+        const radius = scale * .29;
+        if (lensCtx) {
+          const lensSize = Math.max(1, Math.ceil(radius * 2));
+          if (lens.width !== lensSize) lens.width = lens.height = lensSize;
+          lensCtx.fillStyle = '#151515';
+          lensCtx.fillRect(0, 0, lensSize, lensSize);
+          const extent = radius * 3.2;
+          lensCtx.drawImage(canvas, cx - extent, cy - extent, extent * 2, extent * 2, 0, 0, lensSize, lensSize);
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, tau);
+        ctx.clip();
+        ctx.fillStyle = '#131313';
+        ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        if (lensCtx) {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(Math.PI + yaw * .16);
+          ctx.drawImage(lens, -radius, -radius, radius * 2, radius * 2);
+          ctx.restore();
+        }
+        const glass = ctx.createRadialGradient(cx - radius * .36, cy - radius * .42, 0, cx, cy, radius);
+        glass.addColorStop(0, '#fffffff0');
+        glass.addColorStop(.23, '#ffffff4f');
+        glass.addColorStop(.58, '#ffffff12');
+        glass.addColorStop(.88, '#00000080');
+        glass.addColorStop(1, '#ffffff36');
+        ctx.fillStyle = glass;
+        ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        ctx.restore();
+        ctx.strokeStyle = '#c0c0c06e';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, tau);
+        ctx.stroke();
+
+        for (let i = 4; i < depthLayers; i++) paintLayer(i);
+
+        const degrees = ((Math.round(yaw * 180 / Math.PI) % 360) + 360) % 360;
+        if (lastHeading !== degrees) {
+          heading.textContent = 'N ' + String(degrees).padStart(3, '0') + '°';
+          lastHeading = degrees;
+        }
+      }
+
+      function schedule() {
+        if (visible && !frame) frame = requestAnimationFrame(tick);
+      }
+
+      function tick(time) {
+        frame = 0;
+        const dt = lastTime ? Math.min((time - lastTime) / 1000, .05) : 1 / 60;
+        lastTime = time;
+        const automatic = !reducedMotion.matches;
+        if (automatic) {
+          idleYaw += dt * spin;
+          idlePitch = Math.sin(idleYaw) * .08;
+        }
+        // Filter both the input and the visible tilt so quick pointer moves ease in and out.
+        const hoverEase = automatic ? -Math.expm1(-dt * 4.2) : 1;
+        filteredAimX += (aimX - filteredAimX) * hoverEase;
+        filteredAimY += (aimY - filteredAimY) * hoverEase;
+        leanX += (filteredAimX - leanX) * hoverEase;
+        leanY += (filteredAimY - leanY) * hoverEase;
+        const dragEase = automatic ? -Math.expm1(-dt * 11) : 1;
+        dragYaw += (targetDragYaw - dragYaw) * dragEase;
+        dragPitch += (targetDragPitch - dragPitch) * dragEase;
+        if (automatic || needsPaint) {
+          render(idleYaw + dragYaw + leanX, .21 + idlePitch + dragPitch + leanY);
+          needsPaint = false;
+        }
+        if (automatic) schedule();
+      }
+
+      function repaint() {
+        needsPaint = true;
+        schedule();
+      }
+
+      function resize() {
+        const { width, height } = canvas.getBoundingClientRect();
+        pixelRatio = Math.min(devicePixelRatio || 1, smallScreen.matches ? 1.4 : 1.7);
+        canvas.width = Math.max(1, Math.round(width * pixelRatio));
+        canvas.height = Math.max(1, Math.round(height * pixelRatio));
+        repaint();
+      }
+
+      function configureDensity() {
+        geometry = buildOrbit(smallScreen.matches ? 5600 : 12800);
+        resize();
+      }
+
+      canvas.addEventListener('pointerdown', (event) => {
+        if (pointer || !event.isPrimary || event.button !== 0) return;
+        pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        canvas.setPointerCapture(pointer.id);
+      });
+      hero.addEventListener('pointermove', (event) => {
+        if (pointer?.id === event.pointerId) {
+          targetDragYaw += (event.clientX - pointer.x) * .011;
+          targetDragPitch = clamp(targetDragPitch + (event.clientY - pointer.y) * .008, -1.2, 1.2);
+          pointer.x = event.clientX;
+          pointer.y = event.clientY;
+        } else if (!pointer && event.pointerType === 'mouse' && !reducedMotion.matches) {
+          const rect = hero.getBoundingClientRect();
+          aimX = clamp((event.clientX - rect.left) / rect.width - .5, -.5, .5) * .64;
+          aimY = clamp((event.clientY - rect.top) / rect.height - .5, -.5, .5) * .44;
+        }
+        repaint();
+      });
+      canvas.addEventListener('lostpointercapture', (event) => {
+        if (pointer?.id === event.pointerId) pointer = null;
+      });
+      hero.addEventListener('pointerleave', () => {
+        aimX = 0;
+        aimY = 0;
+        repaint();
+      });
+      const keyTurns = { ArrowLeft: [-.18, 0], ArrowRight: [.18, 0], ArrowUp: [0, -.14], ArrowDown: [0, .14] };
+      canvas.addEventListener('keydown', (event) => {
+        const turn = keyTurns[event.key];
+        if (!Array.isArray(turn)) return;
+        event.preventDefault();
+        targetDragYaw += turn[0];
+        targetDragPitch = clamp(targetDragPitch + turn[1], -1.2, 1.2);
+        repaint();
+      });
+      new ResizeObserver(resize).observe(canvas);
+      new IntersectionObserver(([entry]) => {
+        visible = entry.isIntersecting;
+        if (visible) repaint();
+        else {
+          cancelAnimationFrame(frame);
+          frame = 0;
+          lastTime = 0;
+        }
+      }).observe(canvas);
+      smallScreen.addEventListener('change', configureDensity);
+      reducedMotion.addEventListener('change', () => {
+        aimX = 0;
+        aimY = 0;
+        repaint();
+      });
+      configureDensity();
+    })();
+  </script>
+  <script>
+    (() => {
+      const dialog = document.querySelector('#account-dialog');
+      const trigger = document.querySelector('.masthead .account-trigger');
+      const form = dialog.querySelector('.account-form');
+      const profile = dialog.querySelector('.account-profile');
+      const title = dialog.querySelector('#account-title');
+      const description = dialog.querySelector('#account-description');
+      const nameField = dialog.querySelector('#account-name-field');
+      const nameInput = form.elements.namedItem('name');
+      const emailInput = form.elements.namedItem('email');
+      const passwordInput = form.elements.namedItem('password');
+      const passwordToggle = dialog.querySelector('.password-toggle');
+      const submit = dialog.querySelector('.account-submit');
+      const modeButton = dialog.querySelector('.account-mode');
+      const switchText = dialog.querySelector('.account-switch-text');
+      const status = dialog.querySelector('.account-status');
+      const signOut = dialog.querySelector('.sign-out');
+      const sessionKey = 'ink-orbit-session-v1';
+      const accountKey = (email) => 'ink-orbit-account-v1:' + email;
+      let account = null;
+      let registering = false;
+
+      function readAccount(email) {
+        return JSON.parse(localStorage.getItem(accountKey(email)) || 'null');
+      }
+
+      function rememberSession(email) {
+        try {
+          if (email) sessionStorage.setItem(sessionKey, email);
+          else sessionStorage.removeItem(sessionKey);
+        } catch {
+          // Keep the session usable in this tab when session storage is blocked.
+        }
+      }
+
+      try {
+        const signedInEmail = sessionStorage.getItem(sessionKey);
+        if (signedInEmail) account = readAccount(signedInEmail);
+      } catch {
+        // The dialog can still open when the browser restricts storage.
+      }
+
+      function setPasswordVisible(visible) {
+        passwordInput.type = visible ? 'text' : 'password';
+        passwordToggle.textContent = visible ? 'Hide' : 'Show';
+        passwordToggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+      }
+
+      function showAccount(create = false) {
+        registering = create;
+        form.hidden = Boolean(account);
+        profile.hidden = !account;
+        trigger.toggleAttribute('data-signed-in', Boolean(account));
+        nameField.hidden = !create;
+        nameInput.disabled = !create;
+        nameInput.required = create;
+        passwordInput.minLength = create ? 8 : 0;
+        passwordInput.autocomplete = create ? 'new-password' : 'current-password';
+        passwordInput.placeholder = create ? 'At least 8 characters' : 'Your password';
+        passwordInput.value = '';
+        status.textContent = '';
+        setPasswordVisible(false);
+
+        if (account) {
+          title.textContent = 'Your account';
+          description.textContent = 'You are signed in on this device.';
+          dialog.querySelector('.profile-name').textContent = account.name;
+          dialog.querySelector('.profile-email').textContent = account.email;
+          dialog.querySelector('.profile-avatar').textContent = [...account.name.trim()][0]?.toUpperCase() || '?';
+          if (dialog.open) signOut.focus();
+        } else {
+          title.textContent = create ? 'Create an account' : 'Welcome back';
+          description.textContent = create ? 'Set up your local Ink Orbit profile.' : 'Sign in to your account.';
+          submit.textContent = create ? 'Create account' : 'Sign in';
+          switchText.textContent = create ? 'Already registered?' : 'New here?';
+          modeButton.textContent = create ? 'Sign in' : 'Create an account';
+          if (dialog.open) (create ? nameInput : emailInput).focus();
+        }
+      }
+
+      const encodeBytes = (bytes) => btoa(String.fromCharCode(...bytes));
+      async function passwordDigest(password, salt) {
+        const key = await crypto.subtle.importKey(
+          'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']
+        );
+        const bits = await crypto.subtle.deriveBits({
+          name: 'PBKDF2', hash: 'SHA-256', salt: Uint8Array.from(atob(salt), (char) => char.charCodeAt(0)),
+          iterations: 600000,
+        }, key, 256);
+        return encodeBytes(new Uint8Array(bits));
+      }
+
+      trigger.addEventListener('click', () => {
+        showAccount();
+        dialog.showModal();
+        (account ? signOut : emailInput).focus();
+      });
+      dialog.querySelector('.account-close').addEventListener('click', () => dialog.close());
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      dialog.addEventListener('close', () => {
+        form.reset();
+        setPasswordVisible(false);
+        trigger.focus();
+      });
+      modeButton.addEventListener('click', () => showAccount(!registering));
+      passwordToggle.addEventListener('click', () => setPasswordVisible(passwordInput.type === 'password'));
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (submit.disabled) return;
+        const email = emailInput.value.trim().toLowerCase();
+        const password = passwordInput.value;
+        const name = nameInput.value.trim();
+        const create = registering;
+        status.textContent = '';
+
+        if (!crypto.subtle) {
+          status.textContent = 'Open the demo on localhost or HTTPS to use accounts.';
+          return;
+        }
+        if (create && !name) {
+          status.textContent = 'Enter your name.';
+          nameInput.focus();
+          return;
+        }
+
+        submit.disabled = modeButton.disabled = true;
+        try {
+          const existing = readAccount(email);
+          if (create) {
+            if (existing) {
+              status.textContent = 'This email is already registered in this browser.';
+              return;
+            }
+            const salt = encodeBytes(crypto.getRandomValues(new Uint8Array(16)));
+            const digest = await passwordDigest(password, salt);
+            if (readAccount(email)) {
+              status.textContent = 'This email is already registered in this browser.';
+              return;
+            }
+            const newAccount = { name, email, salt, digest };
+            localStorage.setItem(accountKey(email), JSON.stringify(newAccount));
+            account = newAccount;
+          } else {
+            if (!existing || await passwordDigest(password, existing.salt) !== existing.digest) {
+              status.textContent = 'Email or password is incorrect.';
+              return;
+            }
+            account = existing;
+          }
+          rememberSession(email);
+          showAccount();
+        } catch {
+          account = null;
+          status.textContent = 'Could not access this local account. Check whether browser storage is available.';
+        } finally {
+          submit.disabled = modeButton.disabled = false;
+        }
+      });
+
+      signOut.addEventListener('click', () => {
+        rememberSession(null);
+        account = null;
+        form.reset();
+        showAccount();
+      });
+
+      showAccount();
+    })();
+  </script>
+  <script>
+    (() => {
+      const form = document.querySelector('.contact-form');
+      const submit = form.querySelector('.contact-submit');
+      const status = form.querySelector('.contact-result');
+      const draftField = form.querySelector('.contact-draft');
+      const draft = draftField.querySelector('textarea');
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = new FormData(form);
+        const name = data.get('name').trim();
+        const company = data.get('company').trim();
+        const email = data.get('email').trim();
+        const message = data.get('message').trim();
+        if (!name || !message) {
+          status.textContent = 'Enter a name and a message to prepare your draft.';
+          form.elements.namedItem(name ? 'message' : 'name').focus();
+          return;
+        }
+
+        draft.value = [
+          'Subject: Ink Orbit inquiry',
+          'From: ' + name + ' <' + email + '>',
+          ...(company ? ['Company: ' + company] : []),
+          '',
+          message,
+        ].join('\n');
+
+        submit.disabled = true;
+        try {
+          await navigator.clipboard.writeText(draft.value);
+          draftField.hidden = true;
+          status.textContent = 'Draft copied. Paste it into your email app and add a recipient.';
+        } catch {
+          draftField.hidden = false;
+          status.textContent = 'Your draft is ready below. Copy it into your email app and add a recipient.';
+          draft.focus();
+          draft.select();
+        } finally {
+          submit.disabled = false;
+        }
+      });
+      submit.disabled = false;
+    })();
+
+    (() => {
+      const globe = document.querySelector('.contact-globe');
+      const canvas = globe.querySelector('canvas');
+      const toggle = globe.querySelector('.globe-toggle');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Schematic coastlines give the globe a usable offline view.
+      const coastlines = [
+        '-168 66 -164 64 -166 61 -163 58 -158 58 -161 55 -167 54 -160 55 -154 58 -150 59 -148 61 -144 60 -139 59 -136 57 -131 54 -129 52 -126 50 -124 48 -124 43 -124 40 -122 37 -120 34 -117 33 -116 30 -114 28 -113 26 -110 23 -109 23 -111 27 -114 30 -114 32 -111 31 -106 28 -105 24 -102 22 -98 20 -96 19 -93 18 -91 19 -90 21 -87 22 -87 19 -88 16 -85 16 -83 15 -83 12 -82 10 -80 9 -78 9 -77 8 -78 10 -81 10 -83 14 -85 16 -88 18 -91 19 -93 19 -96 19 -97 22 -97 26 -95 29 -90 29 -88 30 -85 30 -83 28 -81 25 -80 26 -81 30 -80 33 -77 35 -76 36 -76 38 -74 40 -70 42 -67 45 -64 45 -63 46 -61 46 -60 47 -62 49 -66 49 -70 47 -67 49 -61 51 -57 52 -59 54 -61 56 -63 58 -64 60 -66 60 -69 59 -71 57 -76 55 -79 52 -83 54 -84 56 -88 57 -92 57 -94 60 -94 63 -90 63 -87 65 -82 66 -83 69 -87 70 -91 69 -96 70 -101 69 -105 69 -110 68 -113 69 -117 69 -121 69 -126 70 -134 69 -140 70 -145 71 -151 71 -156 71 -160 69 -164 69 -168 66',
+        '-80 8 -76 9 -74 11 -71 12 -69 11 -67 10 -64 10 -62 11 -60 8 -57 7 -54 5 -52 4 -51 1 -49 -1 -47 -1 -44 -2 -41 -3 -38 -4 -35 -6 -35 -9 -37 -12 -39 -15 -39 -18 -40 -20 -43 -23 -46 -24 -48 -27 -49 -30 -52 -33 -56 -35 -58 -36 -58 -39 -61 -39 -62 -42 -65 -43 -66 -45 -68 -47 -67 -49 -69 -51 -68 -53 -71 -55 -74 -53 -75 -50 -74 -47 -75 -44 -74 -42 -73 -40 -73 -36 -72 -34 -71 -30 -71 -25 -70 -21 -71 -18 -74 -16 -76 -14 -78 -11 -80 -8 -81 -5 -80 -3 -80 0 -78 2 -77 5 -77 7 -80 8',
+        '-73 78 -69 80 -62 81 -56 82 -44 83 -33 83 -23 82 -17 80 -18 78 -21 76 -20 74 -22 72 -22 70 -25 70 -27 68 -30 68 -34 66 -38 65 -41 63 -43 60 -46 60 -49 62 -52 64 -54 67 -53 70 -55 72 -57 74 -61 76 -66 76 -73 78',
+        '-87 73 -82 74 -78 76 -75 75 -72 73 -70 71 -66 69 -63 67 -66 65 -70 63 -74 64 -77 67 -80 68 -82 71 -87 73',
+        '-96 77 -92 79 -87 80 -84 82 -72 83 -62 82 -65 80 -70 79 -74 78 -79 77 -85 78 -90 76 -96 77',
+        '-112 74 -108 76 -102 76 -99 75 -101 73 -104 72 -109 73 -112 74',
+        '-59 51 -55 52 -53 49 -53 47 -57 47 -59 48 -59 51',
+        '-85 22 -82 23 -79 22 -76 21 -74 20 -77 19 -80 21 -83 22 -85 22',
+        '-74 20 -71 20 -68 19 -68 18 -71 18 -74 18 -74 20',
+        '-25 65 -24 66 -19 67 -15 66 -13 65 -15 64 -21 63 -24 64 -25 65',
+        '-10 51 -9 54 -8 55 -6 55 -6 53 -7 52 -10 51',
+        '-6 50 -4 51 -5 53 -3 54 -5 55 -5 57 -4 58 -3 59 -1 57 -2 55 0 53 2 52 1 51 -1 50 -6 50',
+        '-10 36 -9 40 -9 43 -5 44 -2 46 -1 48 -4 48 -3 49 0 50 3 51 5 53 8 54 9 56 10 57 11 56 12 55 12 57 11 59 8 58 5 60 5 62 8 64 12 66 15 68 19 70 25 71 29 71 31 69 35 69 40 68 41 66 39 65 36 65 40 64 45 67 49 67 52 69 56 69 61 69 66 67 70 69 73 71 75 73 80 73 86 74 93 76 101 77 108 76 114 74 119 73 124 73 130 72 136 73 143 72 149 71 156 71 163 70 170 70 175 69 180 68 -176 67 -171 66 -169 65 -174 65 -178 64 176 62 171 61 165 61 164 59 162 57 161 54 158 52 156 53 155 57 158 60 163 62 160 61 155 59 152 59 149 60 144 60 140 59 137 58 135 55 136 53 140 52 141 49 138 46 135 44 132 43 130 42 129 40 127 38 125 39 124 40 122 40 121 39 120 40 118 39 117 38 119 37 122 37 121 35 120 34 121 32 122 30 121 28 119 26 117 24 114 22 111 21 109 21 108 19 107 16 109 13 109 10 106 9 104 10 102 12 100 14 99 11 100 8 103 4 104 1 102 2 100 5 98 8 98 11 96 15 94 16 93 19 92 21 90 22 88 22 86 20 83 18 80 16 80 13 79 10 77 8 75 11 74 14 73 18 72 19 73 21 70 21 68 23 68 25 66 25 63 25 60 25 58 24 56 26 54 26 51 28 50 30 48 30 48 28 50 26 51 25 52 24 54 24 56 25 57 23 59 23 58 21 56 19 54 17 51 16 48 15 45 13 43 13 42 16 40 19 39 22 37 25 35 28 34 30 35 32 35 35 34 36 31 36 29 36 27 37 26 39 27 40 29 41 31 41 35 42 38 42 40 41 41 42 39 44 37 45 34 45 31 46 29 46 28 44 28 42 27 41 26 40 24 40 23 38 24 37 23 36 21 37 21 39 19 41 18 42 16 44 14 45 13 46 12 45 13 43 15 42 16 41 18 40 17 40 16 39 15 38 15 40 13 41 11 43 10 44 8 44 6 43 4 43 3 42 0 41 -1 39 -1 38 -4 36 -7 36 -10 36',
+        '-5 36 -2 35 1 36 4 37 8 37 10 37 11 35 10 34 12 33 13 32 15 32 17 31 19 30 21 32 24 32 27 31 30 31 32 31 33 30 34 28 35 25 37 22 38 20 39 17 42 15 43 12 44 11 47 11 51 12 51 10 49 8 47 5 44 2 42 0 41 -2 40 -5 39 -7 39 -10 40 -11 39 -14 40 -16 38 -18 36 -20 35 -23 33 -25 32 -28 30 -30 28 -33 25 -34 22 -34 19 -35 18 -33 17 -31 16 -29 15 -26 14 -23 14 -20 13 -17 12 -14 12 -11 13 -9 13 -6 11 -4 9 -2 9 1 7 4 5 4 3 6 0 5 -3 5 -5 5 -7 5 -9 5 -11 7 -13 8 -14 10 -15 12 -17 15 -17 17 -16 20 -16 22 -15 25 -13 28 -12 29 -10 31 -9 33 -7 35 -5 36',
+        '48 -13 50 -15 50 -17 49 -20 47 -23 45 -26 44 -24 43 -22 44 -19 45 -16 48 -13',
+        '79 10 81 9 82 7 81 6 80 6 79 8 79 10',
+        '130 31 131 33 133 34 135 34 137 35 139 35 140 38 141 41 143 42 145 44 142 45 140 43 140 40 139 38 138 37 136 36 134 35 132 35 131 33 130 31',
+        '119 19 122 19 124 16 123 14 125 12 126 10 125 7 123 7 122 9 122 12 121 13 120 16 119 19',
+        '96 6 99 5 102 2 104 0 106 -3 105 -6 103 -5 100 -2 98 1 96 6',
+        '109 1 112 2 115 4 118 6 119 4 118 2 117 -1 117 -4 114 -4 111 -3 110 -1 109 1',
+        '105 -6 109 -6 112 -7 115 -8 114 -9 111 -8 108 -8 105 -7 105 -6',
+        '130 -1 135 -2 139 -2 142 -3 146 -6 150 -8 151 -10 148 -10 145 -8 142 -9 141 -6 137 -5 135 -4 132 -4 130 -1',
+        '114 -22 114 -25 113 -27 114 -30 115 -32 116 -34 119 -35 122 -34 124 -33 128 -32 132 -32 134 -33 136 -35 138 -35 141 -38 144 -39 147 -39 150 -37 151 -35 152 -32 153 -28 152 -25 151 -23 149 -22 148 -20 146 -19 145 -16 145 -14 143 -11 142 -12 141 -15 140 -17 138 -17 136 -15 136 -13 134 -12 132 -12 130 -13 128 -15 126 -14 124 -16 122 -17 121 -19 118 -20 116 -20 114 -22',
+        '145 -40 148 -41 148 -43 146 -44 145 -43 144 -41 145 -40',
+        '172 -34 174 -35 175 -37 178 -38 177 -40 175 -41 173 -41 174 -39 173 -37 172 -34',
+        '173 -41 174 -42 171 -44 170 -46 167 -47 166 -46 168 -44 170 -43 173 -41',
+        '-180 -74 -165 -78 -145 -76 -127 -75 -105 -73 -86 -73 -75 -70 -70 -68 -65 -65 -60 -63 -62 -67 -60 -72 -55 -75 -42 -78 -28 -77 -12 -72 3 -70 16 -70 30 -69 45 -67 60 -67 75 -69 90 -66 109 -66 122 -67 136 -67 148 -69 162 -71 172 -72 180 -74',
+        '-123 49 -112 49 -100 49 -95 49 -92 48 -88 48 -84 46 -82 43 -79 43 -76 44 -74 45 -71 45 -67 47',
+        '-117 32 -114 32 -111 31 -108 31 -106 32 -104 30 -101 29 -99 27 -97 26',
+        '-8 42 -6 42 -2 43 0 43 3 43 4 44 6 46 7 47 8 47 10 47 12 47 13 48 15 49 17 49 19 49 22 50 24 51 26 52 29 52 31 52 33 52',
+        '-13 28 -8 28 -8 31 -6 32 -4 34 -2 35 -1 35 0 34 0 31 -3 28 -5 26 -8 26 -8 23 -12 22 -13 20',
+        '11 36 10 33 10 30 10 27 12 24 15 23 16 23 18 23 22 23 25 22 34 22 37 22',
+        '-69 -18 -69 -23 -68 -27 -69 -32 -70 -35 -71 -39 -71 -45 -72 -49 -69 -52',
+      ];
+      const radians = Math.PI / 180;
+      const tilt = 25 * radians;
+      const sinTilt = Math.sin(tilt);
+      const cosTilt = Math.cos(tilt);
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+      const toPoint = (lon, lat) => {
+        const lambda = lon * radians;
+        const phi = lat * radians;
+        return [Math.cos(phi) * Math.sin(lambda), Math.sin(phi), Math.cos(phi) * Math.cos(lambda)];
+      };
+      let lines = coastlines.map((line) => {
+        const values = line.split(' ').map(Number);
+        const points = [];
+        for (let i = 0; i < values.length; i += 2) points.push(toPoint(values[i], values[i + 1]));
+        return points;
+      });
+      let longitude = -43 * radians;
+      let width = 0;
+      let height = 0;
+      let visible = false;
+      let paused = false;
+      let mapRequested = false;
+      let frame = 0;
+      let lastTime = 0;
+
+      function draw() {
+        if (!width || !height) return;
+        const radius = Math.min(width * .456, height * 1.2);
+        const cx = width / 2;
+        const cy = radius + 2;
+        const sinLon = Math.sin(longitude);
+        const cosLon = Math.cos(longitude);
+        ctx.clearRect(0, 0, width, height);
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.lineWidth = 1.15;
+        ctx.strokeStyle = '#e4e4ea';
+        ctx.stroke();
+
+        ctx.beginPath();
+        for (const line of lines) {
+          let previousDepth = null;
+          let previousX;
+          let previousY;
+          for (const [east, north, forward] of line) {
+            const viewDepth = east * sinLon + forward * cosLon;
+            const depth = north * sinTilt + viewDepth * cosTilt;
+            const x = cx + radius * (east * cosLon - forward * sinLon);
+            const y = cy - radius * (north * cosTilt - viewDepth * sinTilt);
+
+            // Clip at the visible hemisphere so lines do not cross the far side.
+            if (previousDepth === null) {
+              if (depth >= 0) ctx.moveTo(x, y);
+            } else if (depth >= 0 && previousDepth >= 0) {
+              ctx.lineTo(x, y);
+            } else if ((depth >= 0) !== (previousDepth >= 0)) {
+              const fraction = previousDepth / (previousDepth - depth);
+              const edgeX = previousX + (x - previousX) * fraction;
+              const edgeY = previousY + (y - previousY) * fraction;
+              if (depth >= 0) {
+                ctx.moveTo(edgeX, edgeY);
+                ctx.lineTo(x, y);
+              } else {
+                ctx.lineTo(edgeX, edgeY);
+              }
+            }
+            previousDepth = depth;
+            previousX = x;
+            previousY = y;
+          }
+        }
+        ctx.strokeStyle = '#d8d7e0c7';
+        ctx.lineWidth = .78;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+
+      function resize() {
+        const rect = canvas.getBoundingClientRect();
+        width = rect.width;
+        height = rect.height;
+        if (!width || !height) return;
+        const pixelRatio = Math.min(devicePixelRatio || 1, 2);
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        draw();
+      }
+
+      function rotate(now) {
+        if (lastTime) longitude = (longitude + Math.min(now - lastTime, 50) * .00019) % (2 * Math.PI);
+        lastTime = now;
+        draw();
+        frame = requestAnimationFrame(rotate);
+      }
+
+      function syncRotation() {
+        toggle.hidden = reduced.matches;
+        if (visible && !reduced.matches && !paused && !document.hidden) {
+          if (!frame) frame = requestAnimationFrame(rotate);
+        } else if (frame) {
+          cancelAnimationFrame(frame);
+          frame = 0;
+          lastTime = 0;
+        }
+      }
+
+      async function loadBoundaries() {
+        mapRequested = true;
+        try {
+          // Natural Earth outlines, redistributed in World Atlas TopoJSON.
+          const response = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json', {
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!response.ok) return;
+          const { arcs, transform } = await response.json();
+          const [scaleX, scaleY] = transform.scale;
+          const [offsetX, offsetY] = transform.translate;
+          lines = arcs.map((arc) => {
+            let x = 0;
+            let y = 0;
+            return arc.map(([dx, dy]) => {
+              x += dx;
+              y += dy;
+              return toPoint(x * scaleX + offsetX, y * scaleY + offsetY);
+            });
+          });
+          draw();
+        } catch {
+          // Keep the embedded coastlines when the map is unavailable.
+        }
+      }
+
+      toggle.addEventListener('click', () => {
+        paused = !paused;
+        toggle.setAttribute('aria-pressed', String(paused));
+        syncRotation();
+      });
+      new ResizeObserver(resize).observe(globe);
+      new IntersectionObserver(([entry]) => {
+        visible = entry.isIntersecting;
+        if (visible && !mapRequested) loadBoundaries();
+        syncRotation();
+      }).observe(globe);
+      reduced.addEventListener('change', syncRotation);
+      document.addEventListener('visibilitychange', syncRotation);
+      resize();
+    })();
+  </script>
+</body>
+</html>
